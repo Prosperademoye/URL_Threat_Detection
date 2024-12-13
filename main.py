@@ -6,7 +6,12 @@ import requests
 import whois
 from datetime import datetime
 from functools import lru_cache
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import accuracy_score, classification_report
+from xgboost import XGBClassifier
+import joblib
 
 def load_url_dataset(file_path):
     if not os.path.exists(file_path):
@@ -111,10 +116,18 @@ def preprocess_and_EDA(data):
             'domain_age_days', 'domain_registration_length', 'num_redirects']
     scaler = StandardScaler()
     scaled_features = scaler.fit_transform(data[to_scale])
-    print(scaled_features)
     scaled_data = pd.DataFrame(scaled_features,columns=to_scale)
     data[to_scale] = scaled_data
-    print(data.isnull().sum())
+    
+    # Convert boolean columns to integers
+    data['suspicious_keywords'] = data['suspicious_keywords'].astype(int)
+    data['uses_https'] = data['uses_https'].astype(int)
+    data['has_ip_address'] = data['has_ip_address'].astype(int)
+    
+    # Initialize LabelEncoder
+    label_encoder = LabelEncoder()
+    # Encode the labels
+    data['label'] = label_encoder.fit_transform(data['label'])
     
     prepocess_df = pd.DataFrame(data)
     prepocess_df.to_csv('preprocess.csv', index=False)
@@ -125,18 +138,44 @@ def model_training(data):
     X = data.drop(columns=['label'])
     y = data['label']
     
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = XGBClassifier(objective='multi:softmax', num_class=3)
+    scores = cross_val_score(model, X_train, y_train, cv=5, scoring='accuracy')  
+    print(f"Cross-validation scores: {scores}")
+    print(f"Mean accuracy: {scores.mean()}")
+    model = model.fit(X_train,y_train)
+    y_pred = model.predict(X_test)
+    
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Test set accuracy: {accuracy}")
+    print("Classification Report:")
+    print(classification_report(y_test, y_pred))
+    return model
+    
+def save_model(model,model_path):
+    joblib.dump(model,model_path)
+    print("MOdel_saved")
+    
+def load_trained_model(file_path):
+    model = joblib.load(file_path)
+    print(f"Model loaded from {file_path}")
+    return model
 
 if __name__ == "__main__":
     # urls = "malicious_phish_all.csv"
     urls = "output2.csv"
     output = "output.csv"
+    model_path = "model.joblib"
     # batch_extract_features(urls, output)
     # dataset = load_url_dataset("output.csv")
     # preprocess_and_EDA(dataset)
     
     preprocessed_dataset = load_url_dataset("preprocess.csv")
+    model = model_training(preprocessed_dataset)
     
-    
+    save_model(model,model_path)
+    load_trained_model(model_path)
     
     
     
